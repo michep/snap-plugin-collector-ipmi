@@ -23,9 +23,10 @@ type Plugin struct {
 }
 
 type parseResult struct {
-	name    string
-	reading interface{}
-	state   string
+	name     string
+	senstype string
+	reading  interface{}
+	state    string
 }
 
 func NewCollector() *Plugin {
@@ -74,12 +75,14 @@ func (p *Plugin) CollectMetrics(metrics []plugin.Metric) ([]plugin.Metric, error
 
 	outlines := strings.Split(string(output), "\n")
 	var reading interface{}
+	var senstype string
 	for _, line := range outlines {
 		result := parseResult{}
 		fields := smap(strings.Split(line, "|"), strings.TrimSpace)
 		if len(fields) == 3 && fields[1] != "no reading" && fields[2] != "ns" {
 
 			if strings.HasPrefix(fields[1], "0x") {
+				senstype = "code"
 				reading, err = strconv.ParseInt(strings.TrimPrefix(strings.Fields(fields[1])[0], "0x"), 16, 64)
 				if err != nil {
 					continue
@@ -92,10 +95,21 @@ func (p *Plugin) CollectMetrics(metrics []plugin.Metric) ([]plugin.Metric, error
 						continue
 					}
 				}
+				switch strings.Fields(fields[1])[1] {
+				case "degrees":
+					senstype = "temp"
+				case "RPM":
+					senstype = "rpm"
+				case "Volts":
+					senstype = "volts"
+				default:
+					senstype = "NA"
+				}
 			}
 			result.name = fields[0]
 			result.reading = reading
 			result.state = fields[2]
+			result.senstype = senstype
 			results = append(results, result)
 		}
 	}
@@ -110,6 +124,7 @@ func (p *Plugin) CollectMetrics(metrics []plugin.Metric) ([]plugin.Metric, error
 					Timestamp: ts,
 				}
 				mt.Namespace[2].Value = result.name
+				mt.Namespace[3].Value = result.senstype
 				if mt.Data = 1; result.state == "ok" {
 					mt.Data = 0
 				}
@@ -122,6 +137,7 @@ func (p *Plugin) CollectMetrics(metrics []plugin.Metric) ([]plugin.Metric, error
 					Timestamp: ts,
 				}
 				mt.Namespace[2].Value = result.name
+				mt.Namespace[3].Value = result.senstype
 				mt.Data = result.reading
 				mts = append(mts, mt)
 			}
@@ -134,6 +150,7 @@ func (p *Plugin) CollectMetrics(metrics []plugin.Metric) ([]plugin.Metric, error
 func createNamespace(lastelement string) plugin.Namespace {
 	namespace := plugin.NewNamespace(PluginVedor, PluginName)
 	namespace = namespace.AddDynamicElement("sensor", "sensor name")
+	namespace = namespace.AddDynamicElement("type", "sensor type")
 	namespace = namespace.AddStaticElement(lastelement)
 	return namespace
 }
